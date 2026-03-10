@@ -1,0 +1,5 @@
+C:/workspaceformotor/stm32motorbench/inittest/Src/sync_registers.c:33:9:RI_SetRegisterGlobal	4	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/sync_registers.c:167:9:RI_SetRegisterMotor1	24	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/sync_registers.c:640:9:RI_GetRegisterGlobal	8	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/sync_registers.c:785:11:RI_GetRegisterMotor1	96	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/sync_registers.c:1378:9:RI_MovString	4	static

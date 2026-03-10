@@ -1,0 +1,7 @@
+C:/workspaceformotor/stm32motorbench/inittest/Src/mc_tasks_foc.c:503:13:FOC_Clear	2
+C:/workspaceformotor/stm32motorbench/inittest/Src/mc_tasks_foc.c:80:13:FOC_Init	1
+C:/workspaceformotor/stm32motorbench/inittest/Src/mc_tasks_foc.c:154:6:TSK_MF_StopProcessing	1
+C:/workspaceformotor/stm32motorbench/inittest/Src/mc_tasks_foc.c:547:13:FOC_InitAdditionalMethods	1
+C:/workspaceformotor/stm32motorbench/inittest/Src/mc_tasks_foc.c:570:13:FOC_CalcCurrRef	3
+C:/workspaceformotor/stm32motorbench/inittest/Src/mc_tasks_foc.c:173:13:TSK_MediumFrequencyTaskM1	32
+C:/workspaceformotor/stm32motorbench/inittest/Src/mc_tasks_foc.c:629:16:FOC_HighFrequencyTask	12

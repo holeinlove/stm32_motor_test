@@ -1,0 +1,10 @@
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:116:6:TIM1_UVW_SelfTest_Task_SDK	24	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:152:6:Vdc_check_fun_SDK	8	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:202:6:TSNS_Check_SDK	8	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:248:6:Isns_Check_SDK	16	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:307:6:GaN_Safe_AutoStart_Task	16	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:372:6:UART3_Print	8	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:377:6:Debug_Print_Task	312	static
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:480:6:SystemClock_Config	96	static,ignoring_inline_asm
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:419:5:main	160	static,ignoring_inline_asm
+C:/workspaceformotor/stm32motorbench/inittest/Src/main.c:938:6:Error_Handler	0	static,ignoring_inline_asm
