@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 #include "mc_api.h"
 #include "mc_config.h"
 #include "r_divider_bus_voltage_sensor.h"
@@ -88,6 +89,13 @@ DMA_HandleTypeDef hdma_usart3_tx;
 #define TSNS_ADC_MAX_VALID   4040
 #define TSNS_SAMPLE_COUNT    16
 
+/* Calibration Constants for VBUS derived from empirical data */
+#define VBUS_CALIB_GAIN   0.986969f
+#define VBUS_CALIB_OFFSET 0.520000f
+/* Threshold to mask out USB backfeeding noise (e.g., voltages under 3.5V are treated as 0V) */
+#define VBUS_NOISE_DEADBAND_V 3.5f
+
+#define NTC_TABLE_SIZE 34
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -106,6 +114,71 @@ static void MX_NVIC_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/* Function to get calibrated VBUS voltage in floating point */
+float Get_Calibrated_VBUS_V(void)
+{
+    float raw_calculated_voltage;
+    float final_calibrated_voltage;
+    uint16_t raw_voltage_d;
+
+    /* 1. Retrieve Raw ADC Data for VBUS */
+    raw_voltage_d = VBS_GetAvBusVoltage_d((BusVoltageSensor_Handle_t *)&BusVoltageSensor_M1);
+
+    /* 2. Calculate the initial floating-point voltage using ST's default conversion factor */
+    raw_calculated_voltage = (float)raw_voltage_d * ((BusVoltageSensor_Handle_t *)&BusVoltageSensor_M1)->ConversionFactor / 65536.0f;
+
+    /* 3. Apply secondary linear calibration formula: y = mx + c */
+    final_calibrated_voltage = (raw_calculated_voltage * VBUS_CALIB_GAIN) + VBUS_CALIB_OFFSET;
+
+    /* 4. Apply Deadband: Mask out USB backfeed voltage and negative noise */
+    if (final_calibrated_voltage < VBUS_NOISE_DEADBAND_V)
+    {
+        final_calibrated_voltage = 0.0f;
+    }
+
+    return final_calibrated_voltage;
+}
+
+/* Temperature points from -40 C to 125 C */
+const int16_t NTC_TEMP_TABLE[NTC_TABLE_SIZE] = {
+    -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40,
+    45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125
+};
+
+/* Corresponding 12-bit ADC raw values from the newly provided CSV file */
+const uint16_t NTC_ADC_TABLE[NTC_TABLE_SIZE] = {
+    53, 74, 104, 142, 191, 253, 330, 425, 537, 669, 819, 987, 1170, 1365,
+    1568, 1774, 1979, 2180, 2371, 2552, 2719, 2872, 3011, 3136, 3248, 3347,
+    3434, 3511, 3579, 3638, 3690, 3735, 3775, 3810
+};
+
+/* Function to calculate temperature using linear interpolation based on LUT */
+float Get_Temperature_From_Table(uint16_t adc_raw_16bit)
+{
+    /* Convert ST's 16-bit left-aligned ADC value back to actual 12-bit value */
+    uint16_t adc_12bit = adc_raw_16bit >> 4;
+
+    /* Handle out-of-bounds lower limit */
+    if (adc_12bit <= NTC_ADC_TABLE[0]) return (float)NTC_TEMP_TABLE[0];
+
+    /* Handle out-of-bounds upper limit */
+    if (adc_12bit >= NTC_ADC_TABLE[NTC_TABLE_SIZE - 1]) return (float)NTC_TEMP_TABLE[NTC_TABLE_SIZE - 1];
+
+    /* Perform linear interpolation */
+    for (uint8_t i = 0; i < NTC_TABLE_SIZE - 1; i++)
+    {
+        if (adc_12bit >= NTC_ADC_TABLE[i] && adc_12bit <= NTC_ADC_TABLE[i + 1])
+        {
+            float adc_diff = (float)(NTC_ADC_TABLE[i + 1] - NTC_ADC_TABLE[i]);
+            float temp_diff = (float)(NTC_TEMP_TABLE[i + 1] - NTC_TEMP_TABLE[i]);
+            float ratio = (float)(adc_12bit - NTC_ADC_TABLE[i]) / adc_diff;
+            return (float)NTC_TEMP_TABLE[i] + (ratio * temp_diff);
+        }
+    }
+    return -99.0f;
+}
+
 static inline void UVW_TestPins_SetLow(void)
 {
   HAL_GPIO_WritePin(U_TEST_PORT, U_TEST_PIN, GPIO_PIN_RESET);
@@ -160,7 +233,7 @@ void Vdc_check_fun_SDK(void)
     s_last_vdc_tick = now;
 
     /* Get the filtered bus voltage in Volts */
-    uint16_t real_voltage_V = VBS_GetAvBusVoltage_V((BusVoltageSensor_Handle_t *)&BusVoltageSensor_M1);
+    float real_voltage_V = Get_Calibrated_VBUS_V();
 
     /* Hysteresis parameters for VBUS (Target: 2V ~ 50V) */
     const uint16_t VDC_LOW_FAIL       = 2;
@@ -208,8 +281,14 @@ void TSNS_Check_SDK(void)
     if ((now - s_last_tsns_tick) < 100u) return;
     s_last_tsns_tick = now;
 
-    /* Get the temperature in Celsius */
-    int16_t temp_C = NTC_GetAvTemp_C(&TempSensor_M1);
+    /* Get the raw 16-bit ADC value from SDK */
+	uint16_t raw_temp_d = NTC_GetAvTemp_d(&TempSensor_M1);
+
+	/* Calculate precise temperature using our LUT */
+	float precise_temp_C = Get_Temperature_From_Table(raw_temp_d);
+
+	/* Cast to int16_t to match your existing hysteresis logic type */
+	int16_t temp_C = (int16_t)precise_temp_C;
 
     /* Hysteresis parameters for TSNS (Target: -10 C ~ 120 C) */
     const int16_t TSNS_LOW_FAIL     = -10;
@@ -313,7 +392,7 @@ void GaN_Safe_AutoStart_Task(void)
     static bool s_allow_reset_after_power_cycle = false;
 
     MCI_State_t mcState = MC_GetSTMStateMotor1();
-    uint16_t real_voltage_V = VBS_GetAvBusVoltage_V((BusVoltageSensor_Handle_t *)&BusVoltageSensor_M1);
+    float real_voltage_V = Get_Calibrated_VBUS_V();
 
     /* 1. Reset Detection: Detect if 12V was removed */
     if (real_voltage_V < 4)
@@ -388,12 +467,21 @@ void Debug_Print_Task(void)
     MCI_State_t mcState = MC_GetSTMStateMotor1();
 
     /* Retrieve Voltage Data (Physical + Raw ADC) */
-    uint16_t real_voltage_V = VBS_GetAvBusVoltage_V((BusVoltageSensor_Handle_t *)&BusVoltageSensor_M1);
     uint16_t raw_voltage_d  = VBS_GetAvBusVoltage_d((BusVoltageSensor_Handle_t *)&BusVoltageSensor_M1);
+    /* Calculate true floating-point voltage using the raw value and conversion factor */
+	/* Ensure the division is done using a floating-point number (65536.0) */
+    float real_voltage_V = Get_Calibrated_VBUS_V();
+    /* Retrieve Temperature Data (Raw ADC + Precise Physical) */
+	uint16_t raw_temp_d = NTC_GetAvTemp_d(&TempSensor_M1);
+	float precise_temp_C = Get_Temperature_From_Table(raw_temp_d);
+	int16_t temp_C = (int16_t)precise_temp_C; /* Keep as integer for existing snprintf format */
+	int16_t temp_dec = (int16_t)(precise_temp_C * 10.0f) % 10;
 
-    /* Retrieve Temperature Data (Physical + Raw ADC) */
-    int16_t temp_C = NTC_GetAvTemp_C(&TempSensor_M1);
-    uint16_t raw_temp_d = NTC_GetAvTemp_d(&TempSensor_M1);
+	/* Ensure the decimal part is always positive for printing */
+	if (temp_dec < 0)
+	{
+	    temp_dec = -temp_dec;
+	}
 
     /* Retrieve Current Data (Raw ADC) */
     PWMC_ICS_Handle_t *pIcsHandle = (PWMC_ICS_Handle_t *)pwmcHandle[0];
@@ -401,12 +489,12 @@ void Debug_Print_Task(void)
     uint16_t raw_adc_B = (pIcsHandle->pParams_str->ADCx_2->JDR1) >> 4;
 
     // Get PWM enable status
-    uint8_t pwm_is_on = (TIM1->BDTR & TIM_BDTR_MOE) ? 1 : 0;
+	uint8_t pwm_is_on = (TIM1->BDTR & TIM_BDTR_MOE) ? 1 : 0;
 
     // Format the status message including RAW data for TSNS and VBUS
     snprintf(msg, sizeof(msg),
-             "ST=%d, VBUS=%uV(RAW:%u), TSNS=%dC(RAW:%u), I_U=%u, I_V=%u, PWM=%d\r\n",
-             mcState, real_voltage_V, raw_voltage_d, temp_C, raw_temp_d, raw_adc_A, raw_adc_B, pwm_is_on);
+             "ST=%d, VBUS=%.2fV(RAW:%u), TSNS=%d.%dC(RAW:%u), I_U=%u, I_V=%u, PWM=%d\r\n",
+             mcState, real_voltage_V, raw_voltage_d, temp_C, temp_dec, raw_temp_d, raw_adc_A, raw_adc_B, pwm_is_on);
 
     UART3_Print(msg);
 }
@@ -464,7 +552,7 @@ int main(void)
 	 Isns_Check_SDK();
 	 TSNS_Check_SDK();
 	 // Execute the safe auto-start and protection logic for GaN
-	 GaN_Safe_AutoStart_Task();
+//	 GaN_Safe_AutoStart_Task();
 	 Debug_Print_Task();
     /* USER CODE END WHILE */
 
@@ -626,7 +714,11 @@ static void MX_ADC1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC1_Init 2 */
-
+  /* Run hardware calibration for ADC1 before starting the motor control SDK */
+  if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE END ADC1_Init 2 */
 
 }
@@ -706,7 +798,11 @@ static void MX_ADC2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC2_Init 2 */
-
+  /* Run hardware calibration for ADC2 before starting the motor control SDK */
+  if (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE END ADC2_Init 2 */
 
 }
