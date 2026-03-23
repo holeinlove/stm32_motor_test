@@ -84,10 +84,6 @@ DMA_HandleTypeDef hdma_usart3_tx;
 // bidirectional + 3.3V，0A 時理論中心點約 1.65V
 #define ISNS_VOLTAGE_MIN       1.45f
 #define ISNS_VOLTAGE_MAX       1.85f
-//for Tsns
-#define TSNS_ADC_MIN_VALID   50
-#define TSNS_ADC_MAX_VALID   4040
-#define TSNS_SAMPLE_COUNT    16
 
 /* Calibration Constants for VBUS derived from empirical data */
 #define VBUS_CALIB_GAIN   0.986969f
@@ -95,7 +91,7 @@ DMA_HandleTypeDef hdma_usart3_tx;
 /* Threshold to mask out USB backfeeding noise (e.g., voltages under 3.5V are treated as 0V) */
 #define VBUS_NOISE_DEADBAND_V 3.5f
 
-#define NTC_TABLE_SIZE 34
+#define NTC_TABLE_SIZE 331U
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -114,6 +110,411 @@ static void MX_NVIC_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+//for Tsns
+typedef struct
+{
+    float temp_c;
+    uint16_t adc;
+} ntc_lut_t;
+
+const ntc_lut_t NTC_LUT[NTC_TABLE_SIZE] = {
+    { -40.0f,   848 },
+    { -39.5f,   880 },
+    { -39.0f,   912 },
+    { -38.5f,   944 },
+    { -38.0f,   976 },
+    { -37.5f,  1008 },
+    { -37.0f,  1040 },
+    { -36.5f,  1072 },
+    { -36.0f,  1120 },
+    { -35.5f,  1152 },
+    { -35.0f,  1184 },
+    { -34.5f,  1232 },
+    { -34.0f,  1280 },
+    { -33.5f,  1312 },
+    { -33.0f,  1360 },
+    { -32.5f,  1408 },
+    { -32.0f,  1456 },
+    { -31.5f,  1504 },
+    { -31.0f,  1552 },
+    { -30.5f,  1600 },
+    { -30.0f,  1664 },
+    { -29.5f,  1712 },
+    { -29.0f,  1760 },
+    { -28.5f,  1824 },
+    { -28.0f,  1888 },
+    { -27.5f,  1936 },
+    { -27.0f,  2000 },
+    { -26.5f,  2064 },
+    { -26.0f,  2128 },
+    { -25.5f,  2192 },
+    { -25.0f,  2272 },
+    { -24.5f,  2336 },
+    { -24.0f,  2416 },
+    { -23.5f,  2480 },
+    { -23.0f,  2560 },
+    { -22.5f,  2640 },
+    { -22.0f,  2720 },
+    { -21.5f,  2800 },
+    { -21.0f,  2880 },
+    { -20.5f,  2960 },
+    { -20.0f,  3056 },
+    { -19.5f,  3136 },
+    { -19.0f,  3232 },
+    { -18.5f,  3328 },
+    { -18.0f,  3424 },
+    { -17.5f,  3520 },
+    { -17.0f,  3616 },
+    { -16.5f,  3728 },
+    { -16.0f,  3824 },
+    { -15.5f,  3936 },
+    { -15.0f,  4048 },
+    { -14.5f,  4160 },
+    { -14.0f,  4272 },
+    { -13.5f,  4400 },
+    { -13.0f,  4512 },
+    { -12.5f,  4640 },
+    { -12.0f,  4768 },
+    { -11.5f,  4896 },
+    { -11.0f,  5024 },
+    { -10.5f,  5152 },
+    { -10.0f,  5280 },
+    {  -9.5f,  5424 },
+    {  -9.0f,  5568 },
+    {  -8.5f,  5712 },
+    {  -8.0f,  5856 },
+    {  -7.5f,  6000 },
+    {  -7.0f,  6160 },
+    {  -6.5f,  6320 },
+    {  -6.0f,  6464 },
+    {  -5.5f,  6624 },
+    {  -5.0f,  6800 },
+    {  -4.5f,  6960 },
+    {  -4.0f,  7136 },
+    {  -3.5f,  7312 },
+    {  -3.0f,  7472 },
+    {  -2.5f,  7664 },
+    {  -2.0f,  7840 },
+    {  -1.5f,  8032 },
+    {  -1.0f,  8208 },
+    {  -0.5f,  8400 },
+    {   0.0f,  8592 },
+    {   0.5f,  8800 },
+    {   1.0f,  8992 },
+    {   1.5f,  9200 },
+    {   2.0f,  9408 },
+    {   2.5f,  9616 },
+    {   3.0f,  9824 },
+    {   3.5f, 10032 },
+    {   4.0f, 10256 },
+    {   4.5f, 10480 },
+    {   5.0f, 10704 },
+    {   5.5f, 10928 },
+    {   6.0f, 11152 },
+    {   6.5f, 11392 },
+    {   7.0f, 11632 },
+    {   7.5f, 11872 },
+    {   8.0f, 12112 },
+    {   8.5f, 12352 },
+    {   9.0f, 12608 },
+    {   9.5f, 12848 },
+    {  10.0f, 13104 },
+    {  10.5f, 13360 },
+    {  11.0f, 13616 },
+    {  11.5f, 13888 },
+    {  12.0f, 14144 },
+    {  12.5f, 14416 },
+    {  13.0f, 14688 },
+    {  13.5f, 14960 },
+    {  14.0f, 15232 },
+    {  14.5f, 15504 },
+    {  15.0f, 15792 },
+    {  15.5f, 16080 },
+    {  16.0f, 16352 },
+    {  16.5f, 16640 },
+    {  17.0f, 16944 },
+    {  17.5f, 17232 },
+    {  18.0f, 17520 },
+    {  18.5f, 17824 },
+    {  19.0f, 18112 },
+    {  19.5f, 18416 },
+    {  20.0f, 18720 },
+    {  20.5f, 19024 },
+    {  21.0f, 19328 },
+    {  21.5f, 19632 },
+    {  22.0f, 19952 },
+    {  22.5f, 20256 },
+    {  23.0f, 20576 },
+    {  23.5f, 20880 },
+    {  24.0f, 21200 },
+    {  24.5f, 21520 },
+    {  25.0f, 21840 },
+    {  25.5f, 22160 },
+    {  26.0f, 22480 },
+    {  26.5f, 22800 },
+    {  27.0f, 23120 },
+    {  27.5f, 23456 },
+    {  28.0f, 23776 },
+    {  28.5f, 24096 },
+    {  29.0f, 24432 },
+    {  29.5f, 24752 },
+    {  30.0f, 25088 },
+    {  30.5f, 25408 },
+    {  31.0f, 25744 },
+    {  31.5f, 26080 },
+    {  32.0f, 26400 },
+    {  32.5f, 26736 },
+    {  33.0f, 27056 },
+    {  33.5f, 27392 },
+    {  34.0f, 27728 },
+    {  34.5f, 28048 },
+    {  35.0f, 28384 },
+    {  35.5f, 28720 },
+    {  36.0f, 29040 },
+    {  36.5f, 29376 },
+    {  37.0f, 29712 },
+    {  37.5f, 30032 },
+    {  38.0f, 30368 },
+    {  38.5f, 30688 },
+    {  39.0f, 31024 },
+    {  39.5f, 31344 },
+    {  40.0f, 31664 },
+    {  40.5f, 32000 },
+    {  41.0f, 32320 },
+    {  41.5f, 32640 },
+    {  42.0f, 32960 },
+    {  42.5f, 33280 },
+    {  43.0f, 33600 },
+    {  43.5f, 33920 },
+    {  44.0f, 34240 },
+    {  44.5f, 34560 },
+    {  45.0f, 34880 },
+    {  45.5f, 35184 },
+    {  46.0f, 35504 },
+    {  46.5f, 35808 },
+    {  47.0f, 36112 },
+    {  47.5f, 36432 },
+    {  48.0f, 36736 },
+    {  48.5f, 37040 },
+    {  49.0f, 37344 },
+    {  49.5f, 37632 },
+    {  50.0f, 37936 },
+    {  50.5f, 38240 },
+    {  51.0f, 38528 },
+    {  51.5f, 38832 },
+    {  52.0f, 39120 },
+    {  52.5f, 39408 },
+    {  53.0f, 39696 },
+    {  53.5f, 39984 },
+    {  54.0f, 40256 },
+    {  54.5f, 40544 },
+    {  55.0f, 40832 },
+    {  55.5f, 41104 },
+    {  56.0f, 41376 },
+    {  56.5f, 41648 },
+    {  57.0f, 41920 },
+    {  57.5f, 42192 },
+    {  58.0f, 42464 },
+    {  58.5f, 42720 },
+    {  59.0f, 42992 },
+    {  59.5f, 43248 },
+    {  60.0f, 43504 },
+    {  60.5f, 43760 },
+    {  61.0f, 44016 },
+    {  61.5f, 44272 },
+    {  62.0f, 44512 },
+    {  62.5f, 44752 },
+    {  63.0f, 45008 },
+    {  63.5f, 45248 },
+    {  64.0f, 45488 },
+    {  64.5f, 45728 },
+    {  65.0f, 45952 },
+    {  65.5f, 46192 },
+    {  66.0f, 46416 },
+    {  66.5f, 46656 },
+    {  67.0f, 46880 },
+    {  67.5f, 47104 },
+    {  68.0f, 47328 },
+    {  68.5f, 47536 },
+    {  69.0f, 47760 },
+    {  69.5f, 47968 },
+    {  70.0f, 48176 },
+    {  70.5f, 48400 },
+    {  71.0f, 48608 },
+    {  71.5f, 48800 },
+    {  72.0f, 49008 },
+    {  72.5f, 49216 },
+    {  73.0f, 49408 },
+    {  73.5f, 49600 },
+    {  74.0f, 49808 },
+    {  74.5f, 50000 },
+    {  75.0f, 50176 },
+    {  75.5f, 50368 },
+    {  76.0f, 50560 },
+    {  76.5f, 50736 },
+    {  77.0f, 50928 },
+    {  77.5f, 51104 },
+    {  78.0f, 51280 },
+    {  78.5f, 51456 },
+    {  79.0f, 51632 },
+    {  79.5f, 51792 },
+    {  80.0f, 51968 },
+    {  80.5f, 52128 },
+    {  81.0f, 52304 },
+    {  81.5f, 52464 },
+    {  82.0f, 52624 },
+    {  82.5f, 52784 },
+    {  83.0f, 52944 },
+    {  83.5f, 53088 },
+    {  84.0f, 53248 },
+    {  84.5f, 53408 },
+    {  85.0f, 53552 },
+    {  85.5f, 53696 },
+    {  86.0f, 53840 },
+    {  86.5f, 53984 },
+    {  87.0f, 54128 },
+    {  87.5f, 54272 },
+    {  88.0f, 54416 },
+    {  88.5f, 54544 },
+    {  89.0f, 54688 },
+    {  89.5f, 54816 },
+    {  90.0f, 54944 },
+    {  90.5f, 55072 },
+    {  91.0f, 55200 },
+    {  91.5f, 55328 },
+    {  92.0f, 55456 },
+    {  92.5f, 55584 },
+    {  93.0f, 55712 },
+    {  93.5f, 55824 },
+    {  94.0f, 55952 },
+    {  94.5f, 56064 },
+    {  95.0f, 56176 },
+    {  95.5f, 56288 },
+    {  96.0f, 56400 },
+    {  96.5f, 56512 },
+    {  97.0f, 56624 },
+    {  97.5f, 56736 },
+    {  98.0f, 56848 },
+    {  98.5f, 56944 },
+    {  99.0f, 57056 },
+    {  99.5f, 57152 },
+    { 100.0f, 57264 },
+    { 100.5f, 57360 },
+    { 101.0f, 57456 },
+    { 101.5f, 57552 },
+    { 102.0f, 57648 },
+    { 102.5f, 57744 },
+    { 103.0f, 57840 },
+    { 103.5f, 57936 },
+    { 104.0f, 58032 },
+    { 104.5f, 58112 },
+    { 105.0f, 58208 },
+    { 105.5f, 58288 },
+    { 106.0f, 58384 },
+    { 106.5f, 58464 },
+    { 107.0f, 58544 },
+    { 107.5f, 58640 },
+    { 108.0f, 58720 },
+    { 108.5f, 58800 },
+    { 109.0f, 58880 },
+    { 109.5f, 58960 },
+    { 110.0f, 59040 },
+    { 110.5f, 59120 },
+    { 111.0f, 59184 },
+    { 111.5f, 59264 },
+    { 112.0f, 59344 },
+    { 112.5f, 59408 },
+    { 113.0f, 59488 },
+    { 113.5f, 59552 },
+    { 114.0f, 59632 },
+    { 114.5f, 59696 },
+    { 115.0f, 59760 },
+    { 115.5f, 59824 },
+    { 116.0f, 59904 },
+    { 116.5f, 59968 },
+    { 117.0f, 60032 },
+    { 117.5f, 60096 },
+    { 118.0f, 60160 },
+    { 118.5f, 60224 },
+    { 119.0f, 60272 },
+    { 119.5f, 60336 },
+    { 120.0f, 60400 },
+    { 120.5f, 60464 },
+    { 121.0f, 60512 },
+    { 121.5f, 60576 },
+    { 122.0f, 60624 },
+    { 122.5f, 60688 },
+    { 123.0f, 60736 },
+    { 123.5f, 60800 },
+    { 124.0f, 60848 },
+    { 124.5f, 60912 },
+    { 125.0f, 60960 },
+};
+
+/* Function to calculate temperature using linear interpolation based on LUT */
+float Get_Temperature_From_Table(uint16_t adc_raw_16bit)
+{
+    uint16_t adc_value = adc_raw_16bit;
+
+    if (adc_value <= NTC_LUT[0].adc)
+        return NTC_LUT[0].temp_c;
+
+    if (adc_value >= NTC_LUT[NTC_TABLE_SIZE - 1].adc)
+        return NTC_LUT[NTC_TABLE_SIZE - 1].temp_c;
+
+    for (uint16_t i = 0; i < (NTC_TABLE_SIZE - 1U); i++)
+    {
+        uint16_t adc_lo = NTC_LUT[i].adc;
+        uint16_t adc_hi = NTC_LUT[i + 1U].adc;
+
+        if ((adc_value >= adc_lo) && (adc_value <= adc_hi))
+        {
+            float temp_lo = NTC_LUT[i].temp_c;
+            float temp_hi = NTC_LUT[i + 1U].temp_c;
+
+            if (adc_hi == adc_lo)
+                return temp_lo;
+
+            float ratio = ((float)adc_value - (float)adc_lo) /
+                          ((float)adc_hi - (float)adc_lo);
+
+            return temp_lo + (ratio * (temp_hi - temp_lo));
+        }
+    }
+
+    return -999.0f;
+}
+
+float Get_Temperature_From_Table_Nearest(uint16_t adc_raw_16bit)
+{
+    uint16_t adc_value = adc_raw_16bit;
+
+    if (adc_value <= NTC_LUT[0].adc)
+        return NTC_LUT[0].temp_c;
+
+    if (adc_value >= NTC_LUT[NTC_TABLE_SIZE - 1].adc)
+        return NTC_LUT[NTC_TABLE_SIZE - 1].temp_c;
+
+    for (uint16_t i = 0; i < (NTC_TABLE_SIZE - 1U); i++)
+    {
+        uint16_t adc_lo = NTC_LUT[i].adc;
+        uint16_t adc_hi = NTC_LUT[i + 1U].adc;
+
+        if ((adc_value >= adc_lo) && (adc_value <= adc_hi))
+        {
+            uint16_t diff_lo = adc_value - adc_lo;
+            uint16_t diff_hi = adc_hi - adc_value;
+
+            if (diff_lo <= diff_hi)
+                return NTC_LUT[i].temp_c;
+            else
+                return NTC_LUT[i + 1U].temp_c;
+        }
+    }
+
+    return -999.0f;
+}
 
 /* Function to get calibrated VBUS voltage in floating point */
 float Get_Calibrated_VBUS_V(void)
@@ -140,44 +541,6 @@ float Get_Calibrated_VBUS_V(void)
     return final_calibrated_voltage;
 }
 
-/* Temperature points from -40 C to 125 C */
-const int16_t NTC_TEMP_TABLE[NTC_TABLE_SIZE] = {
-    -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40,
-    45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125
-};
-
-/* Corresponding 12-bit ADC raw values from the newly provided CSV file */
-const uint16_t NTC_ADC_TABLE[NTC_TABLE_SIZE] = {
-    53, 74, 104, 142, 191, 253, 330, 425, 537, 669, 819, 987, 1170, 1365,
-    1568, 1774, 1979, 2180, 2371, 2552, 2719, 2872, 3011, 3136, 3248, 3347,
-    3434, 3511, 3579, 3638, 3690, 3735, 3775, 3810
-};
-
-/* Function to calculate temperature using linear interpolation based on LUT */
-float Get_Temperature_From_Table(uint16_t adc_raw_16bit)
-{
-    /* Convert ST's 16-bit left-aligned ADC value back to actual 12-bit value */
-    uint16_t adc_12bit = adc_raw_16bit >> 4;
-
-    /* Handle out-of-bounds lower limit */
-    if (adc_12bit <= NTC_ADC_TABLE[0]) return (float)NTC_TEMP_TABLE[0];
-
-    /* Handle out-of-bounds upper limit */
-    if (adc_12bit >= NTC_ADC_TABLE[NTC_TABLE_SIZE - 1]) return (float)NTC_TEMP_TABLE[NTC_TABLE_SIZE - 1];
-
-    /* Perform linear interpolation */
-    for (uint8_t i = 0; i < NTC_TABLE_SIZE - 1; i++)
-    {
-        if (adc_12bit >= NTC_ADC_TABLE[i] && adc_12bit <= NTC_ADC_TABLE[i + 1])
-        {
-            float adc_diff = (float)(NTC_ADC_TABLE[i + 1] - NTC_ADC_TABLE[i]);
-            float temp_diff = (float)(NTC_TEMP_TABLE[i + 1] - NTC_TEMP_TABLE[i]);
-            float ratio = (float)(adc_12bit - NTC_ADC_TABLE[i]) / adc_diff;
-            return (float)NTC_TEMP_TABLE[i] + (ratio * temp_diff);
-        }
-    }
-    return -99.0f;
-}
 
 static inline void UVW_TestPins_SetLow(void)
 {
