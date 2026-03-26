@@ -647,11 +647,8 @@ void TSNS_Check_SDK(void)
     /* Get the raw 16-bit ADC value from SDK */
 	uint16_t raw_temp_d = NTC_GetAvTemp_d(&TempSensor_M1);
 
-	/* Calculate precise temperature using our LUT */
-	float precise_temp_C = Get_Temperature_From_Table(raw_temp_d);
-
-	/* Cast to int16_t to match your existing hysteresis logic type */
-	int16_t temp_C = (int16_t)precise_temp_C;
+    /* Pure lookup table only, no linear interpolation */
+    float table_temp_C = Get_Temperature_From_Table_Nearest(raw_temp_d);
 
     /* Hysteresis parameters for TSNS (Target: -10 C ~ 120 C) */
     const int16_t TSNS_LOW_FAIL     = -10;
@@ -663,7 +660,7 @@ void TSNS_Check_SDK(void)
     if (!s_is_tsns_ok)
     {
         /* Turn ON condition: Temperature must be safely inside the inner window */
-        if ((temp_C >= TSNS_LOW_RECOVER) && (temp_C <= TSNS_HIGH_RECOVER))
+        if ((table_temp_C >= TSNS_LOW_RECOVER) && (table_temp_C <= TSNS_HIGH_RECOVER))
         {
             s_is_tsns_ok = true;
         }
@@ -671,7 +668,7 @@ void TSNS_Check_SDK(void)
     else
     {
         /* Turn OFF condition: Temperature hits the absolute outer limits */
-        if ((temp_C <= TSNS_LOW_FAIL) || (temp_C >= TSNS_HIGH_FAIL))
+        if ((table_temp_C <= TSNS_LOW_FAIL) || (table_temp_C >= TSNS_HIGH_FAIL))
         {
             s_is_tsns_ok = false;
         }
@@ -834,17 +831,9 @@ void Debug_Print_Task(void)
     /* Calculate true floating-point voltage using the raw value and conversion factor */
 	/* Ensure the division is done using a floating-point number (65536.0) */
     float real_voltage_V = Get_Calibrated_VBUS_V();
-    /* Retrieve Temperature Data (Raw ADC + Precise Physical) */
-	uint16_t raw_temp_d = NTC_GetAvTemp_d(&TempSensor_M1);
-	float precise_temp_C = Get_Temperature_From_Table(raw_temp_d);
-	int16_t temp_C = (int16_t)precise_temp_C; /* Keep as integer for existing snprintf format */
-	int16_t temp_dec = (int16_t)(precise_temp_C * 10.0f) % 10;
-
-	/* Ensure the decimal part is always positive for printing */
-	if (temp_dec < 0)
-	{
-	    temp_dec = -temp_dec;
-	}
+    /* Temperature: pure lookup table only */
+    uint16_t raw_temp_d = NTC_GetAvTemp_d(&TempSensor_M1);
+    float table_temp_C = Get_Temperature_From_Table_Nearest(raw_temp_d);
 
     /* Retrieve Current Data (Raw ADC) */
     PWMC_ICS_Handle_t *pIcsHandle = (PWMC_ICS_Handle_t *)pwmcHandle[0];
@@ -856,8 +845,8 @@ void Debug_Print_Task(void)
 
     // Format the status message including RAW data for TSNS and VBUS
     snprintf(msg, sizeof(msg),
-             "ST=%d, VBUS=%.2fV(RAW:%u), TSNS=%d.%dC(RAW:%u), I_U=%u, I_V=%u, PWM=%d\r\n",
-             mcState, real_voltage_V, raw_voltage_d, temp_C, temp_dec, raw_temp_d, raw_adc_A, raw_adc_B, pwm_is_on);
+             "ST=%d, VBUS=%.2fV(RAW:%u), TSNS=%.1fC(RAW:%u), I_U=%u, I_V=%u, PWM=%d\r\n",
+             mcState, real_voltage_V, raw_voltage_d, table_temp_C, raw_temp_d, raw_adc_A, raw_adc_B, pwm_is_on);
 
     UART3_Print(msg);
 }
@@ -915,7 +904,7 @@ int main(void)
 	 Isns_Check_SDK();
 	 TSNS_Check_SDK();
 	 // Execute the safe auto-start and protection logic for GaN
-//	 GaN_Safe_AutoStart_Task();
+	 GaN_Safe_AutoStart_Task();
 	 Debug_Print_Task();
     /* USER CODE END WHILE */
 
